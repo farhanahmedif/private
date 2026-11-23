@@ -9,7 +9,7 @@ const bn = n => String(n).replace(/\d/g, d => '০১২৩৪৫৬৭৮৯'[d
 const taka = n => '৳' + bn(Number(n).toLocaleString('en-US'));
 const uid = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
 
-let db, S = [], A = [], P = [], tab = 'dash', editId = null, attDate = today(), payMonth = thisMonth(), repOpen = false;
+let db, S = [], A = [], P = [], tab = 'dash', editId = null, attDate = today(), payMonth = thisMonth(), repOpen = false, dataOpen = false;
 
 const toast = m => { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { t.hidden = true; }, 2400); };
 const safe = fn => async (...a) => { try { await fn(...a); } catch (err) { console.error(err); toast('সমস্যা হয়েছে: ' + ((err && err.message) || err)); } };
@@ -163,21 +163,25 @@ function report() {
 }
 const markBackup = () => { try { localStorage.setItem('lastBackup', today()); } catch (e) { /* ignore */ } };
 
-// The backup is a readable web page; the real data sits inside it for restoring.
-function backupHtml() {
-  const data = { app: 'tuition', version: 1, exported: new Date().toISOString(), students: S, attendance: A, payments: P };
-  const json = JSON.stringify(data).replace(/</g, '\\u003c');
+function tablesHtml() {
   const cnt = (id, st) => A.filter(a => a.studentId === id && a.status === st).length;
   const stu = S.map(x => '<tr><td>' + esc(x.name) + '</td><td>' + esc(x.cls) + '</td><td>' + esc(x.subject) + '</td><td>' + taka(x.fee) + '</td><td>' + (x.active ? 'পড়ছে' : 'পড়ছে না') + '</td></tr>').join('');
   const att = S.map(x => '<tr><td>' + esc(x.name) + '</td><td>' + bn(cnt(x.id, 'p')) + '</td><td>' + bn(cnt(x.id, 'a')) + '</td></tr>').join('');
   const pay = [...P].sort((a, b) => b.paidAt.localeCompare(a.paidAt)).map(x => '<tr><td>' + esc(bn(x.paidAt)) + '</td><td>' + esc(sname(x.studentId)) + '</td><td>' + esc(bn(x.month)) + '</td><td>' + taka(x.amount) + '</td></tr>').join('');
+  return '<h2>স্টুডেন্ট</h2><table><tr><th>নাম</th><th>ক্লাস</th><th>বিষয়</th><th>ফি</th><th>অবস্থা</th></tr>' + stu + '</table>' +
+    '<h2>হাজিরা (মোট দিন)</h2><table><tr><th>নাম</th><th>উপস্থিত</th><th>অনুপস্থিত</th></tr>' + att + '</table>' +
+    '<h2>বেতন জমা</h2><table><tr><th>তারিখ</th><th>নাম</th><th>মাস</th><th>টাকা</th></tr>' + pay + '</table>';
+}
+
+// The backup is a readable web page; the real data sits inside it for restoring.
+function backupHtml() {
+  const data = { app: 'tuition', version: 1, exported: new Date().toISOString(), students: S, attendance: A, payments: P };
+  const json = JSON.stringify(data).replace(/</g, '\\u003c');
   return '<!doctype html><html lang="bn"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark">' +
     '<title>টিউশন ব্যাকআপ ' + today() + '</title><style>body{font:16px/1.6 system-ui,sans-serif;max-width:720px;margin:auto;padding:16px}h1{font-size:20px}h2{font-size:17px;margin-top:24px}' +
     'table{border-collapse:collapse;width:100%}th,td{border:1px solid #8886;padding:6px 8px;text-align:left;font-size:14px}th{background:#8882}.n{border:1px solid #e3b52c;border-radius:8px;padding:10px}</style></head><body>' +
     '<h1>টিউশন ব্যাকআপ, ' + esc(bn(today())) + '</h1><p class="n">এই ফাইলে আপনার সব ডেটা আছে। অ্যাপের ব্যাকআপ ট্যাবে "ফাইল বেছে নিন" চেপে এই ফাইলটি দিলে ডেটা ফিরে আসবে। ফাইলটি বদলাবেন না।</p>' +
-    '<h2>স্টুডেন্ট</h2><table><tr><th>নাম</th><th>ক্লাস</th><th>বিষয়</th><th>ফি</th><th>অবস্থা</th></tr>' + stu + '</table>' +
-    '<h2>হাজিরা (মোট দিন)</h2><table><tr><th>নাম</th><th>উপস্থিত</th><th>অনুপস্থিত</th></tr>' + att + '</table>' +
-    '<h2>বেতন জমা</h2><table><tr><th>তারিখ</th><th>নাম</th><th>মাস</th><th>টাকা</th></tr>' + pay + '</table>' +
+    tablesHtml() +
     '<script type="application/json" id="tuition-data">' + json + '</script></body></html>';
 }
 async function readBackup(file) {
@@ -190,10 +194,16 @@ async function readBackup(file) {
   return JSON.parse(txt); // older .json backups
 }
 
+function dataSection() {
+  return '<section class="blk"><h2>সব তথ্য দেখুন</h2><p class="mu">স্টুডেন্ট, হাজিরা ও বেতনের সব হিসাব এক পেজে।</p>' +
+    '<div class="acts"><button class="btn ghost" data-act="data">' + (dataOpen ? 'লুকান' : 'দেখুন') + '</button></div>' +
+    (dataOpen ? '<style>.dt table{border-collapse:collapse;width:100%}.dt th,.dt td{border:1px solid var(--bd);padding:6px 8px;text-align:left;font-size:14px}.dt th{background:var(--bg)}.dt h2{font-size:16px;margin:16px 0 8px}</style><div class="dt" style="overflow-x:auto">' + tablesHtml() + '</div>' : '') + '</section>';
+}
+
 function vBak() {
   let last = 'এখনো নেওয়া হয়নি';
   try { const v = localStorage.getItem('lastBackup'); if (v) last = v; } catch (e) { /* storage blocked */ }
-  return '<section class="blk"><h2>ব্যাকআপ নিন</h2><p class="mu">সব ডেটা শুধু এই ফোনের ব্রাউজারে থাকে। বাটন চাপলে শেয়ার মেনু আসবে, সেখান থেকে Google Drive, WhatsApp বা Files-এ সেভ করুন। ফাইলটি ফোনে খুললে স্টুডেন্ট, হাজিরা ও জমার তালিকা পড়ার মতো করে দেখাবে।</p>' +
+  return dataSection() + '<section class="blk"><h2>ব্যাকআপ নিন</h2><p class="mu">সব ডেটা শুধু এই ফোনের ব্রাউজারে থাকে। বাটন চাপলে শেয়ার মেনু আসবে, সেখান থেকে Google Drive, WhatsApp বা Files-এ সেভ করুন। ফাইলটি শুধু জমিয়ে রাখার জন্য, ফাইল ম্যানেজারে খুললে কোডের মতো দেখাতে পারে। পড়তে হলে উপরের "সব তথ্য দেখুন" ব্যবহার করুন।</p>' +
     '<p>শেষ ব্যাকআপ: ' + esc(bn(last)) + '</p><div class="acts"><button class="btn" data-act="exp">ব্যাকআপ সেভ করুন</button></div></section>' +
     '<section class="blk"><h2>ডেটা ফিরিয়ে আনুন</h2><p class="mu">আগে সেভ করা ব্যাকআপ ফাইলটি বেছে নিন।</p>' +
     '<label class="btn ghost" style="margin:0">ফাইল বেছে নিন<input type="file" id="imp" hidden></label></section>' +
@@ -244,6 +254,7 @@ document.addEventListener('click', safe(async e => {
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     markBackup(); render(); toast('ব্যাকআপ ডাউনলোড হচ্ছে');
   } else if (act === 'rep') { repOpen = !repOpen; render(); }
+  else if (act === 'data') { dataOpen = !dataOpen; render(); }
   else if (act === 'rshare') {
     const text = report();
     if (navigator.share) { try { await navigator.share({ text }); return; } catch (err) { if (err && err.name === 'AbortError') return; } }
