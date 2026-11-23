@@ -9,7 +9,7 @@ const bn = n => String(n).replace(/\d/g, d => '০১২৩৪৫৬৭৮৯'[d
 const taka = n => '৳' + bn(Number(n).toLocaleString('en-US'));
 const uid = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
 
-let db, S = [], A = [], P = [], tab = 'dash', editId = null, attDate = today(), payMonth = thisMonth();
+let db, S = [], A = [], P = [], tab = 'dash', editId = null, attDate = today(), payMonth = thisMonth(), repOpen = false;
 
 const toast = m => { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { t.hidden = true; }, 2400); };
 const safe = fn => async (...a) => { try { await fn(...a); } catch (err) { console.error(err); toast('সমস্যা হয়েছে: ' + ((err && err.message) || err)); } };
@@ -149,12 +149,31 @@ function vPay() {
       '</b><button class="btn sm danger" data-act="delpay" data-id="' + esc(p.id) + '">মুছুন</button></span></div>').join('') : empty('এ মাসে এখনো কোনো জমা নেই।')) + '</section>';
 }
 
+function report() {
+  const m = thisMonth(), act = S.filter(s => s.active);
+  const col = P.filter(p => p.month === m).reduce((x, p) => x + p.amount, 0);
+  let out = 'টিউশন রিপোর্ট, ' + bn(m) + '\n\n', due = 0;
+  act.forEach(s => {
+    const pd = paidOf(s.id, m), d = Math.max(0, s.fee - pd); due += d;
+    const cnt = st => A.filter(a => a.studentId === s.id && a.date.slice(0, 7) === m && a.status === st).length;
+    out += s.name + (s.cls ? ' (' + s.cls + ')' : '') + '\n  ফি ' + taka(s.fee) + ', জমা ' + taka(pd) + ', বাকি ' + taka(d) +
+      '\n  উপস্থিত ' + bn(cnt('p')) + ' দিন, অনুপস্থিত ' + bn(cnt('a')) + ' দিন\n';
+  });
+  return out + '\nমোট আদায়: ' + taka(col) + '\nমোট বাকি: ' + taka(due);
+}
+const markBackup = () => { try { localStorage.setItem('lastBackup', today()); } catch (e) { /* ignore */ } };
+
 function vBak() {
   let last = 'এখনো নেওয়া হয়নি';
   try { const v = localStorage.getItem('lastBackup'); if (v) last = v; } catch (e) { /* storage blocked */ }
-  return '<section class="blk"><h2>ব্যাকআপ</h2><p class="mu">সব ডেটা শুধু এই ডিভাইসের ব্রাউজারে থাকে। ফোন হারালে বা ব্রাউজারের ডেটা মুছলে ডেটা চলে যাবে, তাই নিয়মিত ব্যাকআপ নিন।</p>' +
-    '<p>শেষ ব্যাকআপ: ' + esc(bn(last)) + '</p><div class="acts"><button class="btn" data-act="exp">ব্যাকআপ ডাউনলোড করুন</button>' +
-    '<label class="btn ghost" style="margin:0">ব্যাকআপ থেকে ফিরিয়ে আনুন<input type="file" id="imp" accept="application/json,.json" hidden></label></div></section>';
+  return '<section class="blk"><h2>ব্যাকআপ নিন</h2><p class="mu">সব ডেটা শুধু এই ফোনের ব্রাউজারে থাকে। বাটন চাপলে শেয়ার মেনু আসবে, সেখান থেকে Google Drive, WhatsApp বা Files-এ সেভ করুন। এই ফাইল পড়ার জন্য নয়, শুধু ডেটা ফিরিয়ে আনার জন্য।</p>' +
+    '<p>শেষ ব্যাকআপ: ' + esc(bn(last)) + '</p><div class="acts"><button class="btn" data-act="exp">ব্যাকআপ সেভ করুন</button></div></section>' +
+    '<section class="blk"><h2>ডেটা ফিরিয়ে আনুন</h2><p class="mu">আগে সেভ করা ব্যাকআপ ফাইলটি বেছে নিন।</p>' +
+    '<label class="btn ghost" style="margin:0">ফাইল বেছে নিন<input type="file" id="imp" hidden></label></section>' +
+    '<section class="blk"><h2>এ মাসের রিপোর্ট</h2><p class="mu">পড়ার মতো সহজ লেখা, WhatsApp-এ পাঠানো যায়।</p>' +
+    '<div class="acts"><button class="btn ghost" data-act="rep">' + (repOpen ? 'লুকান' : 'রিপোর্ট দেখুন') + '</button>' +
+    (repOpen ? '<button class="btn" data-act="rshare">শেয়ার করুন</button>' : '') + '</div>' +
+    (repOpen ? '<pre class="rep">' + esc(report()) + '</pre>' : '') + '</section>';
 }
 
 function render() {
@@ -188,12 +207,21 @@ document.addEventListener('click', safe(async e => {
     if (!confirm('এই জমার হিসাবটি মুছবেন?')) return;
     await del('payments', id); await load();
   } else if (act === 'exp') {
-    const data = { app: 'tuition', version: 1, exported: new Date().toISOString(), students: S, attendance: A, payments: P };
-    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-    const a = document.createElement('a'); a.href = url; a.download = 'tuition-backup-' + today() + '.json';
+    const json = JSON.stringify({ app: 'tuition', version: 1, exported: new Date().toISOString(), students: S, attendance: A, payments: P }, null, 2);
+    const file = new File([json], 'tuition-backup-' + today() + '.json', { type: 'application/json' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: 'টিউশন ব্যাকআপ' }); markBackup(); render(); toast('ব্যাকআপ সেভ হয়েছে'); return; }
+      catch (err) { if (err && err.name === 'AbortError') return; }
+    }
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a'); a.href = url; a.download = file.name;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-    try { localStorage.setItem('lastBackup', today()); } catch (e2) { /* ignore */ }
-    render(); toast('ব্যাকআপ ডাউনলোড হচ্ছে');
+    markBackup(); render(); toast('ব্যাকআপ ডাউনলোড হচ্ছে');
+  } else if (act === 'rep') { repOpen = !repOpen; render(); }
+  else if (act === 'rshare') {
+    const text = report();
+    if (navigator.share) { try { await navigator.share({ text }); return; } catch (err) { if (err && err.name === 'AbortError') return; } }
+    await navigator.clipboard.writeText(text); toast('কপি হয়েছে');
   }
 }));
 

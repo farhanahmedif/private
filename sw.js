@@ -1,4 +1,4 @@
-const C = 'tuition-v1'; // bump this when you change any file
+const C = 'tuition-v2'; // bump this when you change any file
 const F = ['./', 'index.html', 'app.js', 'manifest.json', 'icon.svg'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(C).then(c => c.addAll(F)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== C).map(x => caches.delete(x)))).then(() => self.clients.claim())); });
