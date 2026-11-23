@@ -124,7 +124,7 @@ function vStu() {
 
 function vAtt() {
   const act = S.filter(s => s.active);
-  return '<section class="blk"><h2>হাজিরা</h2><label>তারিখ<input type="date" id="attd" value="' + esc(attDate) + '"></label></section>' +
+  return '<section class="blk"><h2>হাজিরা</h2><label>তারিখ<input type="date" id="attd" max="' + today() + '" value="' + esc(attDate) + '"></label></section>' +
     '<section class="blk">' + (act.length ? act.map(s => {
       const st = (attOf(s.id, attDate) || {}).status;
       return '<div class="line"><span>' + esc(s.name) + '<small>' + esc(s.cls) + '</small></span><span class="acts">' +
@@ -279,7 +279,15 @@ document.addEventListener('submit', safe(async e => {
 
 document.addEventListener('change', safe(async e => {
   const t = e.target;
-  if (t.id === 'attd' && t.value) { attDate = t.value; render(); }
+ if (t.id === 'attd' && t.value) {
+  if (t.value > today()) {
+    attDate = today();
+    toast('ভবিষ্যতের তারিখে হাজিরা দেওয়া যাবে না');
+  } else {
+    attDate = t.value;
+  }
+  render();
+}
   else if (t.id === 'paym' && t.value) { payMonth = t.value; render(); }
   else if (t.id === 'imp') {
     const file = t.files[0]; if (!file) return;
