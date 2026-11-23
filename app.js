@@ -163,10 +163,37 @@ function report() {
 }
 const markBackup = () => { try { localStorage.setItem('lastBackup', today()); } catch (e) { /* ignore */ } };
 
+// The backup is a readable web page; the real data sits inside it for restoring.
+function backupHtml() {
+  const data = { app: 'tuition', version: 1, exported: new Date().toISOString(), students: S, attendance: A, payments: P };
+  const json = JSON.stringify(data).replace(/</g, '\\u003c');
+  const cnt = (id, st) => A.filter(a => a.studentId === id && a.status === st).length;
+  const stu = S.map(x => '<tr><td>' + esc(x.name) + '</td><td>' + esc(x.cls) + '</td><td>' + esc(x.subject) + '</td><td>' + taka(x.fee) + '</td><td>' + (x.active ? 'পড়ছে' : 'পড়ছে না') + '</td></tr>').join('');
+  const att = S.map(x => '<tr><td>' + esc(x.name) + '</td><td>' + bn(cnt(x.id, 'p')) + '</td><td>' + bn(cnt(x.id, 'a')) + '</td></tr>').join('');
+  const pay = [...P].sort((a, b) => b.paidAt.localeCompare(a.paidAt)).map(x => '<tr><td>' + esc(bn(x.paidAt)) + '</td><td>' + esc(sname(x.studentId)) + '</td><td>' + esc(bn(x.month)) + '</td><td>' + taka(x.amount) + '</td></tr>').join('');
+  return '<!doctype html><html lang="bn"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark">' +
+    '<title>টিউশন ব্যাকআপ ' + today() + '</title><style>body{font:16px/1.6 system-ui,sans-serif;max-width:720px;margin:auto;padding:16px}h1{font-size:20px}h2{font-size:17px;margin-top:24px}' +
+    'table{border-collapse:collapse;width:100%}th,td{border:1px solid #8886;padding:6px 8px;text-align:left;font-size:14px}th{background:#8882}.n{border:1px solid #e3b52c;border-radius:8px;padding:10px}</style></head><body>' +
+    '<h1>টিউশন ব্যাকআপ, ' + esc(bn(today())) + '</h1><p class="n">এই ফাইলে আপনার সব ডেটা আছে। অ্যাপের ব্যাকআপ ট্যাবে "ফাইল বেছে নিন" চেপে এই ফাইলটি দিলে ডেটা ফিরে আসবে। ফাইলটি বদলাবেন না।</p>' +
+    '<h2>স্টুডেন্ট</h2><table><tr><th>নাম</th><th>ক্লাস</th><th>বিষয়</th><th>ফি</th><th>অবস্থা</th></tr>' + stu + '</table>' +
+    '<h2>হাজিরা (মোট দিন)</h2><table><tr><th>নাম</th><th>উপস্থিত</th><th>অনুপস্থিত</th></tr>' + att + '</table>' +
+    '<h2>বেতন জমা</h2><table><tr><th>তারিখ</th><th>নাম</th><th>মাস</th><th>টাকা</th></tr>' + pay + '</table>' +
+    '<script type="application/json" id="tuition-data">' + json + '</script></body></html>';
+}
+async function readBackup(file) {
+  const txt = await file.text();
+  if (/^\s*</.test(txt)) {
+    const el = new DOMParser().parseFromString(txt, 'text/html').getElementById('tuition-data');
+    if (!el) throw new Error('এই ফাইলে ব্যাকআপের ডেটা পাওয়া যায়নি');
+    return JSON.parse(el.textContent);
+  }
+  return JSON.parse(txt); // older .json backups
+}
+
 function vBak() {
   let last = 'এখনো নেওয়া হয়নি';
   try { const v = localStorage.getItem('lastBackup'); if (v) last = v; } catch (e) { /* storage blocked */ }
-  return '<section class="blk"><h2>ব্যাকআপ নিন</h2><p class="mu">সব ডেটা শুধু এই ফোনের ব্রাউজারে থাকে। বাটন চাপলে শেয়ার মেনু আসবে, সেখান থেকে Google Drive, WhatsApp বা Files-এ সেভ করুন। এই ফাইল পড়ার জন্য নয়, শুধু ডেটা ফিরিয়ে আনার জন্য।</p>' +
+  return '<section class="blk"><h2>ব্যাকআপ নিন</h2><p class="mu">সব ডেটা শুধু এই ফোনের ব্রাউজারে থাকে। বাটন চাপলে শেয়ার মেনু আসবে, সেখান থেকে Google Drive, WhatsApp বা Files-এ সেভ করুন। ফাইলটি ফোনে খুললে স্টুডেন্ট, হাজিরা ও জমার তালিকা পড়ার মতো করে দেখাবে।</p>' +
     '<p>শেষ ব্যাকআপ: ' + esc(bn(last)) + '</p><div class="acts"><button class="btn" data-act="exp">ব্যাকআপ সেভ করুন</button></div></section>' +
     '<section class="blk"><h2>ডেটা ফিরিয়ে আনুন</h2><p class="mu">আগে সেভ করা ব্যাকআপ ফাইলটি বেছে নিন।</p>' +
     '<label class="btn ghost" style="margin:0">ফাইল বেছে নিন<input type="file" id="imp" hidden></label></section>' +
@@ -207,8 +234,7 @@ document.addEventListener('click', safe(async e => {
     if (!confirm('এই জমার হিসাবটি মুছবেন?')) return;
     await del('payments', id); await load();
   } else if (act === 'exp') {
-    const json = JSON.stringify({ app: 'tuition', version: 1, exported: new Date().toISOString(), students: S, attendance: A, payments: P }, null, 2);
-    const file = new File([json], 'tuition-backup-' + today() + '.json', { type: 'application/json' });
+    const file = new File([backupHtml()], 'tuition-backup-' + today() + '.html', { type: 'text/html' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try { await navigator.share({ files: [file], title: 'টিউশন ব্যাকআপ' }); markBackup(); render(); toast('ব্যাকআপ সেভ হয়েছে'); return; }
       catch (err) { if (err && err.name === 'AbortError') return; }
@@ -246,7 +272,7 @@ document.addEventListener('change', safe(async e => {
   else if (t.id === 'paym' && t.value) { payMonth = t.value; render(); }
   else if (t.id === 'imp') {
     const file = t.files[0]; if (!file) return;
-    let d; try { d = JSON.parse(await file.text()); } catch (x) { t.value = ''; throw new Error('ফাইলটি পড়া যায়নি'); }
+    let d; try { d = await readBackup(file); } catch (x) { t.value = ''; throw new Error('ফাইলটি পড়া যায়নি'); }
     if (!confirm('বর্তমান সব ডেটা মুছে ব্যাকআপের ডেটা বসবে। নিশ্চিত?')) { t.value = ''; return; }
     try { await importAll(d); } finally { t.value = ''; }
     await load(); toast('ডেটা ফিরিয়ে আনা হয়েছে');
