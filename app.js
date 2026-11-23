@@ -63,7 +63,18 @@ function importAll(d) {
   const okP = x => x && typeof x.id === 'string' && typeof x.studentId === 'string' && /^\d{4}-\d{2}$/.test(x.month) && Number.isInteger(x.amount) && x.amount > 0 && typeof x.paidAt === 'string';
   if (!d || d.app !== 'tuition' || !Array.isArray(d.students) || !Array.isArray(d.attendance) || !Array.isArray(d.payments)) throw new Error('এটি সঠিক ব্যাকআপ ফাইল নয়');
   if (!d.students.every(okS) || !d.attendance.every(okA) || !d.payments.every(okP)) throw new Error('ব্যাকআপ ফাইলের ডেটা ত্রুটিপূর্ণ');
-  const stu = d.students.map(x => ({ id: x.id, name: x.name, cls: String(x.cls || ''), subject: String(x.subject || ''), phone: String(x.phone || ''), gphone: String(x.gphone || ''), fee: x.fee, active: x.active !== false, createdAt: x.createdAt || Date.now() }));
+ const stu = d.students.map(x => ({
+  id: x.id,
+  name: x.name,
+  joinDate: x.joinDate || '',
+  cls: String(x.cls || ''),
+  subject: String(x.subject || ''),
+  phone: String(x.phone || ''),
+  gphone: String(x.gphone || ''),
+  fee: x.fee,
+  active: x.active !== false,
+  createdAt: x.createdAt || Date.now()
+}));
   const ids = new Set(stu.map(x => x.id));
   return multi((s, a, p) => {
     s.clear(); a.clear(); p.clear();
@@ -84,6 +95,19 @@ const paidOf = (id, m) => P.filter(p => p.studentId === id && p.month === m).red
 const sname = id => (S.find(s => s.id === id) || {}).name || '?';
 const attOf = (id, d) => A.find(a => a.key === id + '|' + d);
 const empty = t => '<p class="mu">' + t + '</p>';
+function daysStudying(joinDate) {
+  if (!joinDate) return 0;
+
+  const [y, m, d] = joinDate.split('-').map(Number);
+  const [ty, tm, td] = today().split('-').map(Number);
+
+  const start = Date.UTC(y, m - 1, d);
+  const current = Date.UTC(ty, tm - 1, td);
+
+  if (isNaN(start) || start > current) return 0;
+
+  return Math.floor((current - start) / 86400000) + 1;
+}
 
 /* ---------- views ---------- */
 function vDash() {
@@ -108,6 +132,7 @@ function vStu() {
   return '<section class="blk"><h2>' + (editId ? 'স্টুডেন্টের তথ্য বদলান' : 'নতুন স্টুডেন্ট যোগ করুন') + '</h2>' +
     '<form id="sf" autocomplete="off">' +
     '<label>নাম<input name="name" required maxlength="80" value="' + esc(e.name) + '"></label>' +
+    '<label>পড়ানো শুরু করার তারিখ<input name="joinDate" type="date" max="' + today() + '" required value="' + esc(e.joinDate || '') + '"></label>' +
     '<div class="two"><label>ক্লাস<input name="cls" maxlength="30" value="' + esc(e.cls) + '"></label>' +
     '<label>বিষয়<input name="subject" maxlength="60" value="' + esc(e.subject) + '"></label></div>' +
     '<div class="two"><label>স্টুডেন্টের ফোন<input name="phone" type="tel" value="' + esc(e.phone) + '"></label>' +
@@ -117,7 +142,8 @@ function vStu() {
     '<div class="acts"><button class="btn" type="submit">সেভ করুন</button>' +
     (editId ? '<button class="btn ghost" type="button" data-act="cancel">বাতিল</button>' : '') + '</div></form></section>' +
     '<section class="blk"><h2>সব স্টুডেন্ট (' + bn(S.length) + ')</h2>' + (S.length ? S.map(s =>
-      '<div class="line"><span>' + esc(s.name) + (s.active ? '' : ' (পড়ছে না)') + '<small>' + esc([s.cls, s.subject].filter(Boolean).join(', ')) + ' ফি ' + taka(s.fee) + '</small></span>' +
+      '<div class="line"><span>' + esc(s.name) + (s.active ? '' : ' (পড়ছে না)') + '<small>' + esc([s.cls, s.subject].filter(Boolean).join(', ')) + ' ফি ' + taka(s.fee) + '</small>' +
+      '<small>পড়ানো হচ্ছে: ' + bn(daysStudying(s.joinDate)) + ' দিন</small></span>' +
       '<span class="acts"><button class="btn sm ghost" data-act="edit" data-id="' + esc(s.id) + '">বদলান</button>' +
       '<button class="btn sm danger" data-act="delstu" data-id="' + esc(s.id) + '">মুছুন</button></span></div>').join('') : empty('এখনো কোনো স্টুডেন্ট নেই। উপরের ফর্ম থেকে যোগ করুন।')) + '</section>';
 }
@@ -294,12 +320,14 @@ document.addEventListener('click', safe(async e => {
 document.addEventListener('submit', safe(async e => {
   if (e.target.id !== 'sf') return;
   e.preventDefault();
-  const f = new FormData(e.target), name = String(f.get('name')).trim(), fee = Number(f.get('fee'));
+ const f = new FormData(e.target), name = String(f.get('name')).trim(), fee = Number(f.get('fee'));
+const joinDate = String(f.get('joinDate') || '');
+if (!joinDate || joinDate > today()) return toast('সঠিক শুরুর তারিখ দিন');
   if (!name) return toast('নাম লিখুন');
   if (!Number.isInteger(fee) || fee < 0) return toast('ফি পূর্ণ সংখ্যায় দিন');
   const old = S.find(s => s.id === editId);
   await put('students', {
-    id: old ? old.id : uid(), name, cls: String(f.get('cls')).trim(), subject: String(f.get('subject')).trim(),
+    id: old ? old.id : uid(), name, joinDate, cls: String(f.get('cls')).trim(), subject: String(f.get('subject')).trim(),
     phone: String(f.get('phone')).trim(), gphone: String(f.get('gphone')).trim(), fee,
     active: f.get('active') === 'on', createdAt: old ? old.createdAt : Date.now()
   });
