@@ -236,10 +236,39 @@ document.addEventListener('click', safe(async e => {
     else await put('attendance', { key, studentId: id, date: attDate, status: t.dataset.st });
     await load();
   } else if (act === 'pay') {
-    const row = t.closest('.row'), amt = Number(row.querySelector('input').value);
-    if (!Number.isInteger(amt) || amt <= 0) return toast('সঠিক টাকার অঙ্ক দিন');
-    await put('payments', { id: uid(), studentId: row.dataset.id, month: payMonth, amount: amt, paidAt: today() });
-    await load(); toast('জমা হয়েছে');
+    const row = t.closest('.row');
+    const amt = Number(row.querySelector('input').value);
+    const studentId = row.dataset.id;
+    const student = S.find(s => s.id === studentId);
+
+    if (!student || !student.active) {
+      return toast('স্টুডেন্টের তথ্য পাওয়া যায়নি');
+    }
+
+    if (!Number.isInteger(amt) || amt <= 0) {
+      return toast('সঠিক টাকার অঙ্ক দিন');
+    }
+
+    const due = student.fee - paidOf(studentId, payMonth);
+
+    if (due <= 0) {
+      return toast('এই মাসের বেতন ইতিমধ্যে পরিশোধিত');
+    }
+
+    if (amt > due) {
+      return toast('বাকি টাকার বেশি জমা নেওয়া যাবে না');
+    }
+
+    await put('payments', {
+      id: uid(),
+      studentId,
+      month: payMonth,
+      amount: amt,
+      paidAt: today()
+    });
+
+    await load();
+    toast('জমা হয়েছে');
   } else if (act === 'delpay') {
     if (!confirm('এই জমার হিসাবটি মুছবেন?')) return;
     await del('payments', id); await load();
