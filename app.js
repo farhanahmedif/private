@@ -21,7 +21,8 @@ function waLink(phone, text) {
 let db, S = [], A = [], P = [];
 let tab = 'dash', editId = null, ledgerId = null, receiptId = null;
 let attDate = today(), payMonth = thisMonth(), repMonth = thisMonth();
-let stuSearch = '', payShowInactive = false, repOpen = false, dataOpen = false;
+let stuSearch = '', stuFilter = 'all', stuFormOpen = false;
+let payShowInactive = false, repOpen = false, dataOpen = false;
 
 const toast = m => { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => { t.hidden = true; }, 2400); };
 const safe = fn => async (...a) => { try { await fn(...a); } catch (err) { console.error(err); toast('সমস্যা হয়েছে: ' + ((err && err.message) || err)); } };
@@ -173,65 +174,105 @@ function vDash() {
 
 function stuListHtml() {
   const q = stuSearch.trim().toLowerCase();
-  const list = q ? S.filter(s =>
-    (s.name || '').toLowerCase().includes(q) ||
-    (s.cls || '').toLowerCase().includes(q) ||
-    (s.subject || '').toLowerCase().includes(q) ||
-    (s.phone || '').includes(q) ||
-    (s.gphone || '').includes(q)
-  ) : S;
+  let list = S;
+  if (stuFilter === 'active') list = list.filter(s => s.active);
+  else if (stuFilter === 'inactive') list = list.filter(s => !s.active);
+
+  if (q) {
+    list = list.filter(s =>
+      (s.name || '').toLowerCase().includes(q) ||
+      (s.cls || '').toLowerCase().includes(q) ||
+      (s.subject || '').toLowerCase().includes(q) ||
+      (s.phone || '').includes(q) ||
+      (s.gphone || '').includes(q)
+    );
+  }
 
   if (!list.length) {
-    return empty(q ? 'কোনো স্টুডেন্ট পাওয়া যায়নি।' : 'এখনো কোনো স্টুডেন্ট নেই। উপরের ফর্ম থেকে যোগ করুন।');
+    return empty(q ? 'কোনো স্টুডেন্ট পাওয়া যায়নি।' : 'এই ক্যাটাগরিতে কোনো স্টুডেন্ট নেই।');
   }
 
   return list.map(s => {
     const days = daysStudying(s.joinDate, s.createdAt);
+    const initial = (s.name || '?').trim().charAt(0);
     const wa = (s.gphone || s.phone) ? waLink(s.gphone || s.phone, 'আসসালামু আলাইকুম, ' + s.name + '-এর বিষয়ে যোগাযোগ করছি।') : null;
 
     return '<div class="stu-card">' +
-      '<div class="stu-header">' +
-        '<div>' +
-          '<b style="cursor:pointer;font-size:16px" data-act="ledger" data-id="' + esc(s.id) + '">' + esc(s.name) + '</b>' +
-          (s.active ? ' <span class="pill ok" style="font-size:11px">পড়ছে</span>' : ' <span class="pill neutral" style="font-size:11px">পড়া বন্ধ</span>') +
+      '<div style="display:flex;gap:12px;align-items:flex-start">' +
+        '<div class="stu-avatar">' + esc(initial) + '</div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
+            '<b style="cursor:pointer;font-size:16px" data-act="ledger" data-id="' + esc(s.id) + '">' + esc(s.name) + '</b>' +
+            (s.active ? '<span class="pill ok" style="font-size:11px">পড়ছে</span>' : '<span class="pill neutral" style="font-size:11px">পড়া বন্ধ</span>') +
+          '</div>' +
           '<div class="stu-meta">' +
             '<span>' + esc([s.cls, s.subject].filter(Boolean).join(', ') || 'সাধারণ') + '</span>' +
+            '<span>•</span>' +
             '<span>ফি: <b>' + taka(s.fee) + '</b></span>' +
-            (days > 0 ? '<span>' + (s.active ? 'পড়ানো হচ্ছে ' : 'পড়ানো হয়েছিল ') + bn(days) + ' দিন</span>' : '') +
+            (days > 0 ? '<span>•</span><span>' + (s.active ? 'পড়ানো হচ্ছে ' : 'পড়ানো হয়েছিল ') + bn(days) + ' দিন</span>' : '') +
+          '</div>' +
+          '<div class="stu-contacts">' +
+            (s.phone ? '<a class="tel-link" href="tel:' + esc(s.phone) + '">📞 ছাত্র: ' + esc(s.phone) + '</a>' : '') +
+            (s.gphone ? '<a class="tel-link" href="tel:' + esc(s.gphone) + '">📞 অভিভাবক: ' + esc(s.gphone) + '</a>' : '') +
+            (wa ? '<a class="btn sm wa" target="_blank" href="' + wa + '">WhatsApp</a>' : '') +
+          '</div>' +
+          '<div class="stu-actions">' +
+            '<button class="btn sm ghost" data-act="ledger" data-id="' + esc(s.id) + '">📋 খাতা</button>' +
+            '<button class="btn sm ghost" data-act="edit" data-id="' + esc(s.id) + '">✏️ তথ্য বদলান</button>' +
+            '<button class="btn sm danger" data-act="delstu" data-id="' + esc(s.id) + '">🗑️ মুছুন</button>' +
           '</div>' +
         '</div>' +
-      '</div>' +
-      '<div class="stu-contacts">' +
-        (s.phone ? '<a class="tel-link" href="tel:' + esc(s.phone) + '">📞 ছাত্র: ' + esc(s.phone) + '</a>' : '') +
-        (s.gphone ? '<a class="tel-link" href="tel:' + esc(s.gphone) + '">📞 অভিভাবক: ' + esc(s.gphone) + '</a>' : '') +
-        (wa ? '<a class="btn sm wa" target="_blank" href="' + wa + '">WhatsApp</a>' : '') +
-      '</div>' +
-      '<div class="stu-actions">' +
-        '<button class="btn sm ghost" data-act="ledger" data-id="' + esc(s.id) + '">📋 খাতা</button>' +
-        '<button class="btn sm ghost" data-act="edit" data-id="' + esc(s.id) + '">✏️ বদলান</button>' +
-        '<button class="btn sm danger" data-act="delstu" data-id="' + esc(s.id) + '">🗑️ মুছুন</button>' +
       '</div>' +
     '</div>';
   }).join('');
 }
 
 function vStu() {
+  const isFormVisible = stuFormOpen || editId !== null;
   const e = S.find(s => s.id === editId) || { name: '', cls: '', subject: '', phone: '', gphone: '', fee: '', active: true, joinDate: today() };
-  return '<section class="blk"><h2>' + (editId ? 'স্টুডেন্টের তথ্য বদলান' : 'নতুন স্টুডেন্ট যোগ করুন') + '</h2>' +
-    '<form id="sf" autocomplete="off">' +
-    '<label>নাম<input name="name" required maxlength="80" placeholder="যেমন: ফারহান আহমেদ" value="' + esc(e.name) + '"></label>' +
-    '<label>পড়ানো শুরু করার তারিখ<input name="joinDate" type="date" max="' + today() + '" required value="' + esc(e.joinDate || today()) + '"></label>' +
-    '<div class="two"><label>ক্লাস<input name="cls" maxlength="30" placeholder="যেমন: ৯ম শ্রেণি" value="' + esc(e.cls) + '"></label>' +
-    '<label>বিষয়<input name="subject" maxlength="60" placeholder="যেমন: গণিত ও পদার্থ" value="' + esc(e.subject) + '"></label></div>' +
-    '<div class="two"><label>স্টুডেন্টের ফোন<input name="phone" type="tel" placeholder="017XXXXXXXX" value="' + esc(e.phone) + '"></label>' +
-    '<label>অভিভাবকের ফোন<input name="gphone" type="tel" placeholder="018XXXXXXXX" value="' + esc(e.gphone) + '"></label></div>' +
-    '<label>মাসিক ফি (টাকা)<input name="fee" type="number" min="0" step="1" inputmode="numeric" placeholder="যেমন: ২০০০" required value="' + esc(e.fee) + '"></label>' +
-    '<label class="chk" style="margin:14px 0"><input name="active" type="checkbox"' + (e.active ? ' checked' : '') + '> এখনো নিয়মিত পড়ছে</label>' +
-    '<div class="acts"><button class="btn primary" type="submit">সেভ করুন</button>' +
-    (editId ? '<button class="btn ghost" type="button" data-act="cancel">বাতিল</button>' : '') + '</div></form></section>' +
-    '<section class="blk"><h2>সব স্টুডেন্ট (' + bn(S.length) + ')</h2>' +
-    (S.length > 3 ? '<label style="margin-bottom:14px">স্টুডেন্ট খুঁজুন<input type="search" id="stusearch" placeholder="নাম, ক্লাস, বিষয় বা ফোন..." value="' + esc(stuSearch) + '"></label>' : '') +
-    '<div id="stu-list">' + stuListHtml() + '</div></section>';
+  const actCount = S.filter(s => s.active).length;
+  const inactCount = S.length - actCount;
+
+  return '<section class="blk">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">' +
+      '<div>' +
+        '<h2 style="margin:0;font-size:18px">স্টুডেন্ট তালিকা (' + bn(S.length) + ' জন)</h2>' +
+        '<small class="mu">সক্রিয়: ' + bn(actCount) + ' জন | পড়া বন্ধ: ' + bn(inactCount) + ' জন</small>' +
+      '</div>' +
+      '<button class="btn sm ' + (isFormVisible ? 'ghost' : 'primary') + '" data-act="toggle-stu-form">' +
+        (isFormVisible ? '✕ ফর্ম লুকান' : '+ নতুন স্টুডেন্ট যোগ করুন') +
+      '</button>' +
+    '</div>' +
+    '</section>' +
+    (isFormVisible ?
+      '<section class="blk" style="border-color:var(--ac);box-shadow:0 0 0 1px var(--ac)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">' +
+          '<h2 style="margin:0;color:var(--ac)">' + (editId ? '✏️ স্টুডেন্টের তথ্য বদলান' : '➕ নতুন স্টুডেন্ট যোগ করুন') + '</h2>' +
+          '<button class="btn sm ghost" data-act="cancel">বাতিল</button>' +
+        '</div>' +
+        '<form id="sf" autocomplete="off">' +
+          '<label>নাম<input name="name" required maxlength="80" placeholder="যেমন: ফারহান আহমেদ" value="' + esc(e.name) + '"></label>' +
+          '<label>পড়ানো শুরু করার তারিখ<input name="joinDate" type="date" max="' + today() + '" required value="' + esc(e.joinDate || today()) + '"></label>' +
+          '<div class="two"><label>ক্লাস<input name="cls" maxlength="30" placeholder="যেমন: ৯ম শ্রেণি" value="' + esc(e.cls) + '"></label>' +
+          '<label>বিষয়<input name="subject" maxlength="60" placeholder="যেমন: গণিত ও পদার্থ" value="' + esc(e.subject) + '"></label></div>' +
+          '<div class="two"><label>স্টুডেন্টের ফোন<input name="phone" type="tel" placeholder="017XXXXXXXX" value="' + esc(e.phone) + '"></label>' +
+          '<label>অভিভাবকের ফোন<input name="gphone" type="tel" placeholder="018XXXXXXXX" value="' + esc(e.gphone) + '"></label></div>' +
+          '<label>মাসিক ফি (টাকা)<input name="fee" type="number" min="0" step="1" inputmode="numeric" placeholder="যেমন: ২০০০" required value="' + esc(e.fee) + '"></label>' +
+          '<label class="chk" style="margin:14px 0"><input name="active" type="checkbox"' + (e.active ? ' checked' : '') + '> এখনো নিয়মিত পড়ছে</label>' +
+          '<div class="acts"><button class="btn primary" type="submit">সেভ করুন</button>' +
+          '<button class="btn ghost" type="button" data-act="cancel">বাতিল</button></div>' +
+        '</form>' +
+      '</section>'
+    : '') +
+    '<section class="blk">' +
+      '<div class="filter-tabs">' +
+        '<button class="filter-btn ' + (stuFilter === 'all' ? 'on' : '') + '" data-act="stu-filter" data-filter="all">সবাই (' + bn(S.length) + ')</button>' +
+        '<button class="filter-btn ' + (stuFilter === 'active' ? 'on' : '') + '" data-act="stu-filter" data-filter="active">নিয়মিত (' + bn(actCount) + ')</button>' +
+        '<button class="filter-btn ' + (stuFilter === 'inactive' ? 'on' : '') + '" data-act="stu-filter" data-filter="inactive">পড়া বন্ধ (' + bn(inactCount) + ')</button>' +
+      '</div>' +
+      '<label style="margin-bottom:14px"><input type="search" id="stusearch" placeholder="নাম, ক্লাস, বিষয় বা ফোন দিয়ে খুঁজুন..." value="' + esc(stuSearch) + '"></label>' +
+      '<div id="stu-list">' + stuListHtml() + '</div>' +
+    '</section>';
 }
 
 function vAtt() {
@@ -483,12 +524,37 @@ document.addEventListener('input', e => {
 
 document.addEventListener('click', safe(async e => {
   const nb = e.target.closest('nav button');
-  if (nb) { tab = nb.dataset.tab; if (tab !== 'stu') editId = null; ledgerId = null; receiptId = null; render(); window.scrollTo(0, 0); return; }
+  if (nb) {
+    tab = nb.dataset.tab;
+    if (tab !== 'stu') { editId = null; stuFormOpen = false; }
+    ledgerId = null; receiptId = null;
+    render();
+    window.scrollTo(0, 0);
+    return;
+  }
   const t = e.target.closest('[data-act]');
   if (!t) return;
   const act = t.dataset.act, id = t.dataset.id;
-  if (act === 'edit') { editId = id; render(); window.scrollTo(0, 0); }
-  else if (act === 'cancel') { editId = null; render(); }
+  if (act === 'toggle-stu-form') {
+    stuFormOpen = !stuFormOpen;
+    if (!stuFormOpen) editId = null;
+    render();
+  }
+  else if (act === 'stu-filter') {
+    stuFilter = t.dataset.filter;
+    render();
+  }
+  else if (act === 'edit') {
+    editId = id;
+    stuFormOpen = true;
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  else if (act === 'cancel') {
+    editId = null;
+    stuFormOpen = false;
+    render();
+  }
   else if (act === 'ledger') { ledgerId = id; render(); }
   else if (act === 'close-ledger') { ledgerId = null; render(); }
   else if (act === 'receipt') { receiptId = id; render(); }
@@ -598,7 +664,10 @@ document.addEventListener('submit', safe(async e => {
     phone: String(f.get('phone')).trim(), gphone: String(f.get('gphone')).trim(), fee,
     active: f.get('active') === 'on', createdAt: old ? old.createdAt : Date.now()
   });
-  editId = null; await load(); toast('সেভ হয়েছে');
+  editId = null;
+  stuFormOpen = false;
+  await load();
+  toast('সেভ হয়েছে');
 }));
 
 document.addEventListener('change', safe(async e => {
