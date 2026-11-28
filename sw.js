@@ -1,4 +1,4 @@
-const C = 'tuition-v5';
+const C = 'tuition-v6';
 const F = ['./', 'index.html', 'app.js', 'manifest.json', 'icon.svg'];
 
 self.addEventListener('install', e => {
